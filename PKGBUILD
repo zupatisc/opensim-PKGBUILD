@@ -10,41 +10,44 @@ license=('Apache')
 depends=("java-environment-openjdk=8" )
 makedepends=("git" "gcc-fortran" "cmake" "swig" "lapack" "liblas" "gconf" "apache-netbeans") # 12.3 Is currently used in the projects CI
 provides=("OpenSim")
-source=("$pkgname-core-$pkgver.tar.gz::https://github.com/opensim-org/opensim-core/archive/refs/tags/4.3.tar.gz"
-    "$pkgname-gui-$pkgver.tar.gz::https://github.com/opensim-org/opensim-gui/archive/refs/tags/4.3.tar.gz")
-md5sums=("d063ebde0f2f96b4e27fb47ac7dd25a1" "aaa98e7bed7774e3ea358d44ffe2ee08")
+source=("$pkgname-core-$pkgver-source.tar.gz::https://github.com/opensim-org/opensim-core/archive/refs/tags/4.3.tar.gz"
+    "$pkgname-gui-source::git+https://github.com/opensim-org/opensim-gui")
+md5sums=("d063ebde0f2f96b4e27fb47ac7dd25a1" SKIP)
 
 prepare() {
-    mkdir -p build_deps
-    mkdir -p build_core
-    mkdir -p build
+    mv $pkgname-core-4.3 $pkgname-core-source
+    cd $pkgname-gui-source
+    git submodule update --init --recursive -- opensim-models opensim-visualizer Gui/opensim/threejs
+
+    cd $srcdir
+    mkdir -p $pkgname-core-source/dependencies/build
+    mkdir -p $pkgname-core-source/build
+    mkdir -p $pkgname-gui-source/build
 }
 
 build() {
     # Building OpenSim dependencies
-    cd build_deps
-    cmake ../opensim-core-$pkgver/dependencies -DSUPERBUILD_ezc3d:BOOL=on  -DOPENSIM_WITH_CASADI:BOOL=on -DOPENSIM_WITH_TROPTER:BOOL=on -DCMAKE_INSTALL_PREFIX=../opensim_dependencies_install
-    cmake . -LAH
-    cmake --build . --config Release
+    cd $srcdir/$pkgname-core-source/dependencies/build
+    cmake $srcdir/$pkgname-core-source/dependencies -DCMAKE_INSTALL_PREFIX=$srcdir/$pkgname-core-dependencies/ -DCMAKE_BUILD_TYPE='Release' -DSUPERBUILD_simbody=ON -DSUPERBUILD_spdlog=ON -DSUPERBUILD_ezc3d=ON\
+        -DSUPERBUILD_docopt=ON -DSUPERBUILD_BTK=OFF -DOPENSIM_WITH_CASADI=ON -DOPENSIM_WITH_TROPTER=ON
+    make -j8
 
     # Building OpenSim core
-    cd ../build_core
-    cmake ../opensim-core-$pkgver -DOPENSIM_DEPENDENCIES_DIR=../opensim_dependencies_install -DBUILD_JAVA_WRAPPING=on -DBUILD_PYTHON_WRAPPING=on -DOPENSIM_C3D_PARSER=ezc3d -DBUILD_TESTING=off\
-        -DCMAKE_INSTALL_PREFIX=../opensim-core-install -DOPENSIM_INSTALL_UNIX_FHS=OFF -DSWIG_DIR=/usr/share/swig -DSWIG_EXECUTABLE=/usr/bin/swig
-    cmake . -LAH
-    cmake --build . --config Release 
-    cmake --install .
-	# cd "$pkgname-$pkgver"
-	# ./configure --prefix=/usr
-	# make
+    cd $srcdir/$pkgname-core-source/build
+    cmake ../ -DCMAKE_INSTALL_PREFIX=$srcdir/$pkgname-core -DCMAKE_BUILD_TYPE='RelWithDebInfo' -DOPENSIM_DEPENDENCIES_DIR=$srcdir/$pkgname-core-dependencies/ -DOPENSIM_C3D_PARSER=ezc3d\
+        -DBUILD_PYTHON_WRAPPING=ON -DBUILD_JAVA_WRAPPING=ON -DWITH_BTK=OFF -DWITH_EZC3D=ON -DBUILD_TESTING=OFF -DOPENSIM_INSTALL_UNIX_FHS=OFF -DOPENSIM_COPY_DEPENDENCIES=ON\
+        -DSWIG_DIR=/usr/share/swig -DSWIG_EXECUTABLE=/usr/bin/swig -DOPENSIM_COPY_DEPENDENCIES=ON -DCMAKE_BUILD_TYPE='Release'  -DOPENSIM_WITH_CASADI=ON -DOPENSIM_WITH_TROPTER=ON
+    make -j2
+    make install
+
+    # Building OpenSim gui
+    cd $srcdir/$pkgname-gui-source/build
+    cmake ../ -DCMAKE_PREFIX_PATH=$srcdir/$pkgname-core -DAnt_EXECUTABLE="/usr/share/apache-netbeans/extide/ant/bin/ant" -DANT_ARGS="-Dnbplatform.default.netbeans.dest.dir=/usr/share/apache-netbeans;-Dnbplatform.default.harness.dir=/usr/share/apache-netbeans/harness"
+    make CopyOpenSimCore
+    make PrepareInstaller
 }
 
-# check() {
-# 	cd "$pkgname-$pkgver"
-# 	make -k check
-# }
-
 package() {
-	cd "$pkgname-$pkgver"
-	# make DESTDIR="$pkgdir/" install
+	cd "$pkgname-gui-source/Gui/opensim/dist/installer/opensim"
+    bash INSTALL
 }
